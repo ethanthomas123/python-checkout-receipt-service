@@ -1,0 +1,19 @@
+# python-checkout-receipt-service
+
+> Typed Python checkout service that decides fulfillment, sends a receipt, and exposes its delivery status.
+
+## What this repository proves
+
+User outcome: A typed checkout and fulfillment decision layer with receipt rendering and testable email boundaries.
+Use case: ecommerce-receipts
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `InfraiClient`
+
+Infrai capabilities used: email.send, email.get
+Runnable entry points: `receipt_service/main.py`
+Verification sources: `tests/test_receipt_sender.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt

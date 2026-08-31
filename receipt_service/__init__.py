@@ -1,0 +1,1 @@
+"""Checkout receipt example service."""
