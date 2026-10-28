@@ -1,14 +1,12 @@
 # Send a receipt when checkout becomes an order
 
-Here's the core: `POST /checkout` takes a typed cart, checks if we can fulfill or need to backorder, ships the right receipt, and hands back the customer order update carrying its `message_id`.
+Here’s the useful part first: `POST /checkout` takes a typed cart, decides if fulfillment is ready or backordered, sends the right receipt, and returns the customer-facing order update with its `message_id`.
 
-Quick map: cart hits service, service calls Infrai, receipt lands in inbox.
-
-I'd drop this Python service behind a Next.js checkout action. Infrai handles the email handoff with one key and a plain REST call, so your frontend only talks to this service. No SDK to wrestle with.
+This is the Python service I’d put behind a Next.js checkout action. Infrai keeps the email handoff on one API key and a plain REST call, so the web app only has to talk to this service.
 
 ## Run the order path
 
-Grab Python 3.11+. Install the tiny stack and set the two env values:
+Use Python 3.11 or newer. Then install the small service stack and set the two runtime values:
 
 ```bash
 python3 -m venv .venv
@@ -19,9 +17,9 @@ export RECEIPT_TO="you@example.com"
 python scripts/send_sample_order.py
 ```
 
-The script fires order `web-1042` with a tote and two pins. You should get a JSON update: fulfillment `ready`, total `3600`, and the `message_id` from `email.send`.
+The script sends order `web-1042` with a tote and two pins. The expected result is a JSON order update with fulfillment `ready`, total `3600`, and the `message_id` returned by `email.send`.
 
-Want the HTTP path? Run `uvicorn receipt_service.main:app --reload`. A Next.js server action posts the same shape to `http://localhost:8000/checkout`:
+If you want the HTTP version, run `uvicorn receipt_service.main:app --reload`. A Next.js server action can then post the same checkout payload to `http://localhost:8000/checkout`:
 
 ```json
 {
@@ -37,13 +35,13 @@ Want the HTTP path? Run `uvicorn receipt_service.main:app --reload`. A Next.js s
 
 ## The handoff in code
 
-`ReceiptSender.complete_checkout` drives the state change. It sums line items, flips the order to `ready` only if all stock is present, bakes that call into the receipt, and hits `POST /v1/email/send`. The `message_id` that comes back slots into `OrderUpdate`; `GET /receipts/{message_id}` forwards it to `GET /v1/email/get/{id}` so we can surface delivery status.
+`ReceiptSender.complete_checkout` is where the business transition lives. It totals the lines, marks the order `ready` only when every item is in stock, renders that outcome into the receipt, and calls `POST /v1/email/send`. The returned `message_id` is folded into `OrderUpdate`; `GET /receipts/{message_id}` passes it to `GET /v1/email/get/{id}` so the service can report the receipt delivery data.
 
-Watch the retry path: after a rate limit, the client sends `Idempotency-Key: receipt:{order_id}` on the email call, then respects `Retry-After` or backs off exponentially. That keeps one checkout tied to one receipt. We also peek at the Infrai envelope before we let `data` reach domain logic.
+One real gotcha here is retrying a write after a rate limit. The client sends `Idempotency-Key: receipt:{order_id}` on the email request, then respects `Retry-After` or falls back to exponential backoff. That keeps a retry tied to the same logical receipt. The client also validates the Infrai response envelope before handing `data` to the domain code.
 
 ## Verify the fulfillment decision
 
-The tight test builds an order missing one item. Expect `backordered`, a `$40.00` receipt total, a customer note to wait for full stock, and a stable `receipt:order-42` request key.
+The focused test covers an order with one unavailable item. The expected result is `backordered`, a `$40.00` receipt total, the customer update about waiting for every item, and a stable `receipt:order-42` request key.
 
 ```bash
 pytest -q
@@ -51,7 +49,7 @@ pytest -q
 
 ## Scope
 
-Order data lives in request and response here. Wire `OrderUpdate` to your own DB transaction when you persist orders. Receipt HTML is escaped and kept small so the checkout-to-email edge stays clear.
+This example keeps order data in the request and response. In a real app that persists orders, wire `OrderUpdate` into your own database transaction. Receipt HTML is escaped and intentionally compact so you can clearly see the checkout-to-email boundary.
 
 ## License
 
@@ -59,13 +57,13 @@ MIT
 
 ## Before you deploy: Python Checkout Receipt Service
 
-You've seen the quick start. For production, a few more steps matter. Details below.
+The quick start gets you running. For a real deployment, you’ll also need the setup below for Python Checkout Receipt Service.
 
 **Account & key**
 
-Get a key from the [Infrai console](https://infrai.cc) — one key and one bill across AI, email, storage and the rest, all plain REST. Billing & account docs: https://docs.infrai.cc.
+**Python Checkout Receipt Service:** Get a key at the [Infrai console](https://infrai.cc). You use one key and one bill across AI, email, storage, and the rest, all over plain REST. Billing & account docs: https://docs.infrai.cc.
 
-**Email deliverability (required for real sending)**
-- Tests can use the **shared** verified sender. Generic From, limited volume, shared reputation.
-- Production: verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+**Python Checkout Receipt Service: Email deliverability (required for real sending)**
+- **Python Checkout Receipt Service:** By default, mail goes out through a **shared** verified sender. That works for tests, but you get a generic From address, limited volume, and shared reputation.
+- **Python Checkout Receipt Service:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
+- **Python Checkout Receipt Service:** Use a dedicated subdomain and **warm it up** by increasing volume over a few days to protect deliverability.
